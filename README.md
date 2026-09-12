@@ -4,7 +4,7 @@ The UN/EDIFACT content contract, a technology of
 [xmip-core-contract](https://github.com/IlleNilsson/xmip-core-contract).
 
 Two claims. **Well-formedness is a given**: a sound interchange by ISO 9735,
-service characters and release honoured, `UNB`/`UNZ`, `UNH`/`UNT` and
+service characters and release honored, `UNB`/`UNZ`, `UNH`/`UNT` and
 `UNG`/`UNE` paired with matching references and counts. **Conformance is a given
 once the contract is named**: a Receive or Send Location that refers to this
 contract with a message type bound, `ORDERS` or `ORDERS:D:96A`, has every
