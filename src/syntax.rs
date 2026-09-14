@@ -6,6 +6,9 @@
 //! `segment N (TAG)`.
 
 use contract::ValidationIssue;
+// The segment is the capability's: EDIFACT and X12 read the same shape
+// (ADR-0044); the syntax that cuts it out of an interchange is this file's.
+pub use contract::segment::Segment;
 
 /// The service characters in force.
 #[derive(Clone, Copy, Debug)]
@@ -26,28 +29,6 @@ impl Default for ServiceCharacters {
             release: '?',
             terminator: '\'',
         }
-    }
-}
-
-/// One segment: a tag and its data elements, each a list of components.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Segment {
-    pub tag: String,
-    pub elements: Vec<Vec<String>>,
-}
-
-impl Segment {
-    /// The components of data element `index` (1-based, after the tag), or
-    /// none.
-    #[must_use]
-    pub fn element(&self, index: usize) -> &[String] {
-        self.elements.get(index - 1).map_or(&[], Vec::as_slice)
-    }
-
-    /// The first component of data element `index`, or empty.
-    #[must_use]
-    pub fn simple(&self, index: usize) -> &str {
-        self.element(index).first().map_or("", String::as_str)
     }
 }
 
@@ -74,12 +55,16 @@ impl Interchange {
                 };
                 (characters, c.as_str())
             }
-            Some(_) => return Err(malformed("UNA is shorter than its six service characters")),
+            Some(_) => {
+                return Err(ValidationIssue::malformed(
+                    "UNA is shorter than its six service characters",
+                ));
+            }
             None => (ServiceCharacters::default(), text),
         };
         let segments = segments(body, characters)?;
         if segments.is_empty() {
-            return Err(malformed("no segment"));
+            return Err(ValidationIssue::malformed("no segment"));
         }
         Ok(Self { segments })
     }
@@ -103,16 +88,14 @@ impl Interchange {
     pub fn soundness(&self) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let at = |n: usize| format!("segment {} ({})", n + 1, self.segments[n].tag);
+        let envelope = |message: &str, n: usize| ValidationIssue::at("envelope", message, &at(n));
         let first = &self.segments[0];
         if first.tag != "UNB" {
-            issues.push(envelope("the interchange does not open with UNB", &at(0)));
+            issues.push(envelope("the interchange does not open with UNB", 0));
         }
         let last = self.segments.len() - 1;
         if self.segments[last].tag != "UNZ" {
-            issues.push(envelope(
-                "the interchange does not close with UNZ",
-                &at(last),
-            ));
+            issues.push(envelope("the interchange does not close with UNZ", last));
         }
         let mut open_message: Option<(usize, String)> = None;
         let mut open_group: Option<(usize, String, usize)> = None;
@@ -123,7 +106,7 @@ impl Interchange {
                     if let Some((start, _)) = &open_message {
                         issues.push(envelope(
                             &format!("UNH inside the message opened at segment {}", start + 1),
-                            &at(n),
+                            n,
                         ));
                     }
                     open_message = Some((n, segment.simple(1).to_string()));
@@ -137,17 +120,17 @@ impl Interchange {
                                 "UNT counts {} segments, the message has {counted}",
                                 segment.simple(1)
                             );
-                            issues.push(envelope(&message, &at(n)));
+                            issues.push(envelope(&message, n));
                         }
                         if segment.simple(2) != reference {
                             let message = format!(
                                 "UNT closes {}, the UNH opened {reference}",
                                 segment.simple(2)
                             );
-                            issues.push(envelope(&message, &at(n)));
+                            issues.push(envelope(&message, n));
                         }
                     }
-                    None => issues.push(envelope("UNT with no message open", &at(n))),
+                    None => issues.push(envelope("UNT with no message open", n)),
                 },
                 "UNG" => {
                     open_group = Some((n, segment.simple(5).to_string(), messages));
@@ -160,16 +143,13 @@ impl Interchange {
                                 "UNE counts {} messages, the group has {in_group}",
                                 segment.simple(1)
                             );
-                            issues.push(envelope(&message, &at(n)));
+                            issues.push(envelope(&message, n));
                         }
                         if segment.simple(2) != reference {
-                            issues.push(envelope(
-                                "UNE does not close the reference UNG opened",
-                                &at(n),
-                            ));
+                            issues.push(envelope("UNE does not close the reference UNG opened", n));
                         }
                     }
-                    None => issues.push(envelope("UNE with no group open", &at(n))),
+                    None => issues.push(envelope("UNE with no group open", n)),
                 },
                 "UNZ" => {
                     if segment.simple(1).parse::<usize>().ok() != Some(messages)
@@ -179,7 +159,7 @@ impl Interchange {
                             "UNZ counts {}, the interchange has {messages} messages",
                             segment.simple(1)
                         );
-                        issues.push(envelope(&message, &at(n)));
+                        issues.push(envelope(&message, n));
                     }
                     if first.tag == "UNB" && segment.simple(2) != first.simple(5) {
                         let message = format!(
@@ -187,17 +167,17 @@ impl Interchange {
                             segment.simple(2),
                             first.simple(5)
                         );
-                        issues.push(envelope(&message, &at(n)));
+                        issues.push(envelope(&message, n));
                     }
                 }
                 _ => {}
             }
         }
         if let Some((start, _)) = open_message {
-            issues.push(envelope("the message is never closed by UNT", &at(start)));
+            issues.push(envelope("the message is never closed by UNT", start));
         }
         if let Some((start, _, _)) = open_group {
-            issues.push(envelope("the group is never closed by UNE", &at(start)));
+            issues.push(envelope("the group is never closed by UNE", start));
         }
         issues
     }
@@ -231,10 +211,14 @@ fn segments(body: &str, c: ServiceCharacters) -> Result<Vec<Segment>, Validation
         }
     }
     if released {
-        return Err(malformed("the text ends on a release character"));
+        return Err(ValidationIssue::malformed(
+            "the text ends on a release character",
+        ));
     }
     if elements.len() > 1 || !elements[0][0].is_empty() {
-        return Err(malformed("the last segment has no terminator"));
+        return Err(ValidationIssue::malformed(
+            "the last segment has no terminator",
+        ));
     }
     Ok(segments)
 }
@@ -252,25 +236,11 @@ fn segment(mut elements: Vec<Vec<String>>) -> Result<Segment, ValidationIssue> {
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
     if !sound {
-        return Err(malformed(&format!("{tag:?} is not a segment tag")));
+        return Err(ValidationIssue::malformed(&format!(
+            "{tag:?} is not a segment tag"
+        )));
     }
     Ok(Segment { tag, elements })
-}
-
-fn malformed(message: &str) -> ValidationIssue {
-    ValidationIssue {
-        code: "malformed".to_string(),
-        message: message.to_string(),
-        path: None,
-    }
-}
-
-fn envelope(message: &str, path: &str) -> ValidationIssue {
-    ValidationIssue {
-        code: "envelope".to_string(),
-        message: message.to_string(),
-        path: Some(path.to_string()),
-    }
 }
 
 #[cfg(test)]
