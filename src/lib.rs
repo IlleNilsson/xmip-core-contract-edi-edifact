@@ -138,22 +138,20 @@ impl Contract for Edifact {
         let text = match std::str::from_utf8(stream.bytes()) {
             Ok(text) => text,
             Err(error) => {
-                return Ok(result(vec![issue(
-                    "malformed",
+                return Ok(ValidationResult::of(vec![ValidationIssue::malformed(
                     &format!("not text: {error}"),
-                    None,
                 )]));
             }
         };
         let interchange = match Interchange::parse(text) {
             Ok(interchange) => interchange,
-            Err(unsound) => return Ok(result(vec![unsound])),
+            Err(unsound) => return Ok(ValidationResult::of(vec![unsound])),
         };
         let mut issues = interchange.soundness();
         if let Some(wanted) = &self.message_type {
             for (ordinal, header) in interchange.message_headers() {
                 if let Some(message) = mismatch(wanted, header) {
-                    issues.push(issue(
+                    issues.push(ValidationIssue::new(
                         "message-type",
                         &message,
                         Some(format!("message {ordinal}")),
@@ -161,7 +159,7 @@ impl Contract for Edifact {
                 }
             }
         }
-        Ok(result(issues))
+        Ok(ValidationResult::of(issues))
     }
 }
 
@@ -190,21 +188,6 @@ fn mismatch(wanted: &MessageType, header: &Segment) -> Option<String> {
     None
 }
 
-fn issue(code: &str, message: &str, path: Option<String>) -> ValidationIssue {
-    ValidationIssue {
-        code: code.to_string(),
-        message: message.to_string(),
-        path,
-    }
-}
-
-fn result(issues: Vec<ValidationIssue>) -> ValidationResult {
-    ValidationResult {
-        valid: issues.is_empty(),
-        issues,
-    }
-}
-
 /// Loads the contract a Location names: an empty reference is the bare
 /// contract, anything else is a message type, `ORDERS` or `ORDERS:D:96A`.
 pub struct EdifactFactory;
@@ -225,11 +208,8 @@ impl ContractFactory for EdifactFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use contract::fixture::stream;
     use xcore::StreamId;
-
-    fn stream(text: &str) -> Stream {
-        Stream::new(StreamId::new(1), text.as_bytes().to_vec(), None)
-    }
 
     const ORDERS: &str = "UNA:+.? 'UNB+UNOC:3+SENDER+RECEIVER+260907:1345+REF001'\
 UNH+1+ORDERS:D:96A:UN'BGM+220+PO4711'DTM+137:20260907:102'NAD+BY+ACME'\
