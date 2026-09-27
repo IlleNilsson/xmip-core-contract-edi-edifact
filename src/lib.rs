@@ -28,6 +28,7 @@ use contract::{
 };
 use stream::Stream;
 use syntax::{Interchange, Segment};
+use xcore::settings::{Applies, Kind, Presence, Setting, Settings};
 
 /// The bound message type: type, and optionally version and release.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +198,10 @@ impl ContractFactory for EdifactFactory {
         "edi-edifact"
     }
 
+    fn settings(&self) -> &'static Settings {
+        SETTINGS
+    }
+
     fn load(&self, reference: &str) -> Result<Box<dyn Contract>, ContractError> {
         if reference.trim().is_empty() {
             return Ok(Box::new(Edifact::new()));
@@ -204,6 +209,18 @@ impl ContractFactory for EdifactFactory {
         Ok(Box::new(Edifact::of(MessageType::parse(reference)?)))
     }
 }
+
+/// What a Location gives this contract (ADR-0064, amendment 2026-09-26).
+const SETTINGS: &Settings = &Settings {
+    technology: env!("CARGO_PKG_NAME"),
+    settings: &[Setting {
+        name: "reference",
+        kind: Kind::Text,
+        presence: Presence::Optional,
+        meaning: "The message type, ORDERS or ORDERS:D:96A; left out, any interchange holds.",
+        applies: Applies::Both,
+    }],
+};
 
 #[cfg(test)]
 mod tests {
@@ -277,5 +294,30 @@ LIN+1++X001:SA'QTY+21:2'UNS+S'CNT+2:1'UNT+9+1'UNZ+1+REF001'";
             "edi-edifact:ORDERS:D:96A"
         );
         assert!(factory.load("ORDERS:D").is_err());
+    }
+
+    #[test]
+    fn edi_edifact_declares_its_settings_and_reads_through_them() {
+        assert!(SETTINGS.problems().is_empty(), "{:?}", SETTINGS.problems());
+        let given = |name: &str, value: &str| {
+            (
+                name.to_string(),
+                xcore::settings::Given::Text(value.to_string()),
+            )
+        };
+        assert!(EdifactFactory.open(Applies::Both, &[]).is_ok(), "bare");
+        let bound = EdifactFactory
+            .open(Applies::Receive, &[given("reference", "ORDERS:D:96A")])
+            .expect("bound");
+        assert!(bound.descriptor().id.0.contains("edi-edifact:ORDERS:D:96A"));
+        let refused = EdifactFactory
+            .open(Applies::Send, &[given("unheard_of", "x")])
+            .err()
+            .expect("an unknown setting is refused");
+        assert!(
+            refused.message.contains("unheard_of"),
+            "{}",
+            refused.message
+        );
     }
 }
