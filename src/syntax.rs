@@ -8,7 +8,7 @@
 use contract::ValidationIssue;
 // The segment is the capability's: EDIFACT and X12 read the same shape
 // (ADR-0044); the syntax that cuts it out of an interchange is this file's.
-pub use contract::segment::Segment;
+use contract::segment::Segment;
 
 /// The service characters in force.
 #[derive(Clone, Copy, Debug)]
@@ -88,7 +88,7 @@ impl Interchange {
     pub fn soundness(&self) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let at = |n: usize| format!("segment {} ({})", n + 1, self.segments[n].tag);
-        let envelope = |message: &str, n: usize| ValidationIssue::at("envelope", message, &at(n));
+        let envelope = |message: &str, n: usize| ValidationIssue::at("envelope", message, at(n));
         let first = &self.segments[0];
         if first.tag != "UNB" {
             issues.push(envelope("the interchange does not open with UNB", 0));
@@ -236,7 +236,7 @@ fn segment(mut elements: Vec<Vec<String>>) -> Result<Segment, ValidationIssue> {
             .chars()
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
     if !sound {
-        return Err(ValidationIssue::malformed(&format!(
+        return Err(ValidationIssue::malformed(format!(
             "{tag:?} is not a segment tag"
         )));
     }

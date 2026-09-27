@@ -22,12 +22,13 @@
 
 pub mod syntax;
 
+use contract::segment::Segment;
 use contract::{
     Contract, ContractDescriptor, ContractError, ContractFactory, ContractId, ValidationIssue,
     ValidationResult,
 };
 use stream::Stream;
-use syntax::{Interchange, Segment};
+use syntax::Interchange;
 use xcore::settings::{Applies, Kind, Presence, Setting, Settings};
 
 /// The bound message type: type, and optionally version and release.
@@ -136,11 +137,11 @@ impl Contract for Edifact {
     }
 
     fn validate(&self, stream: &Stream) -> Result<ValidationResult, ContractError> {
-        let text = match std::str::from_utf8(stream.bytes()) {
+        let text = match stream.text() {
             Ok(text) => text,
             Err(error) => {
                 return Ok(ValidationResult::of(vec![ValidationIssue::malformed(
-                    &format!("not text: {error}"),
+                    format!("not text: {error}"),
                 )]));
             }
         };
