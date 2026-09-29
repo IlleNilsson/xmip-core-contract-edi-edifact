@@ -10,7 +10,7 @@
 //! interchange opens with, release character honoured); `UNB` opens and `UNZ`
 //! closes with the same reference and the right message count; every `UNH` is
 //! closed by a `UNT` with the same reference and the right segment count;
-//! `UNG`/`UNE` groups likewise. That is what a partner's interchange must
+//! `UNG`/`UNE` groups likewise. That is what a Party's interchange must
 //! satisfy before any message in it means anything.
 //!
 //! Conformance is the *message type*: a Location that names this contract with
