@@ -10,6 +10,11 @@ once the contract is named**: a Receive or Send Location that refers to this
 contract with a message type bound, `ORDERS` or `ORDERS:D:96A`, has every
 message's `UNH` held to it.
 
+The claims are this crate's when it is called, and the Playground calls it.
+A node holding a Location's Streams to it is
+[decided, not built](../../../../../doc/architecture/estate-map.md#arrival-validation): a node refuses to start a
+Location that names a contract until it does.
+
 Every EDIFACT directory is a version of this one technology and lives here; the
 segment tables that hold a message to its directory's structure are the next
 layer in this repository.
