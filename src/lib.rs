@@ -7,7 +7,7 @@
 //!
 //! Well-formed here is a *sound interchange*, ISO 9735 syntax: segments read
 //! with the service characters in force (the defaults, or the `UNA` the
-//! interchange opens with, release character honoured); `UNB` opens and `UNZ`
+//! interchange opens with, release character honored); `UNB` opens and `UNZ`
 //! closes with the same reference and the right message count; every `UNH` is
 //! closed by a `UNT` with the same reference and the right segment count;
 //! `UNG`/`UNE` groups likewise. That is what a Party's interchange must
