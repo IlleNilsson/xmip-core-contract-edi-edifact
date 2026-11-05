@@ -10,7 +10,7 @@ once the contract is named**: a Receive or Send Location that refers to this
 contract with a message type bound, `ORDERS` or `ORDERS:D:96A`, has every
 message's `UNH` held to it.
 
-The claims are this crate's when it is called, and the Playground calls it.
+The claims are this crate's when it is called, and the Essentials calls it.
 A node holding a Location's Streams to it is
 [decided, not built](../../../../../doc/architecture/estate-map.md#arrival-validation): a node refuses to start a
 Location that names a contract until it does.
