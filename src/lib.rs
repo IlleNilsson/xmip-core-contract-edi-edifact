@@ -132,12 +132,13 @@ impl Contract for Edifact {
         }) {
             return Ok(true);
         }
-        let head = &stream.bytes()[..stream.bytes().len().min(3)];
+        let bytes = stream.load()?;
+        let head = &bytes[..bytes.len().min(3)];
         Ok(head == b"UNA" || head == b"UNB")
     }
 
     fn validate(&self, stream: &Stream) -> Result<ValidationResult, ContractError> {
-        let text = match stream.text() {
+        let text = match contract::text(stream)? {
             Ok(text) => text,
             Err(error) => {
                 return Ok(ValidationResult::of(vec![ValidationIssue::malformed(
