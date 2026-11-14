@@ -10,6 +10,13 @@ once the contract is named**: a Receive or Send Location that refers to this
 contract with a message type bound, `ORDERS` or `ORDERS:D:96A`, has every
 message's `UNH` held to it.
 
+An interchange is read by one walk, `walk::Walk`, a segment at a time in its
+own service characters, releases honored: the contract walks it whole into
+the segments it checks, and the `edi` path technology
+([xmip-core-path-edi](https://github.com/IlleNilsson/xmip-core-path-edi))
+cuts only the segment it reads and walks the rest uncut, so a malformed
+interchange is refused in the same words by both.
+
 The claims are this crate's when it is called, and the Essentials calls it.
 A node holding a Location's Streams to it is
 [decided, not built](../../../../../doc/architecture/estate-map.md#arrival-validation): a node refuses to start a
