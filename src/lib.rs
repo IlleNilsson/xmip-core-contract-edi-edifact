@@ -21,6 +21,7 @@
 //! directory's structure are the next layer here, not another repository.
 
 pub mod syntax;
+pub mod walk;
 
 use contract::segment::Segment;
 use contract::{

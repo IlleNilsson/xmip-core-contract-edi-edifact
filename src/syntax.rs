@@ -1,5 +1,6 @@
-//! ISO 9735 syntax: reading an interchange into segments, and the soundness
-//! checks the service segments carry.
+//! ISO 9735 syntax: an interchange read into segments, written back in its
+//! own service characters, and the soundness checks the service segments
+//! carry. The segments are cut by the one walk, [`Walk`].
 //!
 //! An issue's `code` is `malformed` when the text cannot be read as segments at
 //! all, else `envelope` for a service-segment departure; its `path` is
@@ -7,8 +8,10 @@
 
 use contract::ValidationIssue;
 // The segment is the capability's: EDIFACT and X12 read the same shape
-// (ADR-0044); the syntax that cuts it out of an interchange is this file's.
+// (ADR-0044); the walk that cuts it out of an interchange is this crate's.
 use contract::segment::Segment;
+
+use crate::walk::Walk;
 
 /// The service characters in force.
 #[derive(Clone, Copy, Debug)]
@@ -46,33 +49,12 @@ impl Interchange {
     /// # Errors
     /// The one `malformed` issue when the text is not segments at all.
     pub fn parse(text: &str) -> Result<Self, ValidationIssue> {
-        let (characters, body) = match text.strip_prefix("UNA") {
-            Some(rest) if rest.chars().count() >= 6 => {
-                let mut c = rest.chars();
-                let characters = ServiceCharacters {
-                    component: c.next().unwrap_or(':'),
-                    data: c.next().unwrap_or('+'),
-                    decimal: c.next().unwrap_or('.'),
-                    release: c.next().unwrap_or('?'),
-                    terminator: c.nth(1).unwrap_or('\''),
-                };
-                (characters, c.as_str())
-            }
-            Some(_) => {
-                return Err(ValidationIssue::malformed(
-                    "UNA is shorter than its six service characters",
-                ));
-            }
-            None => (ServiceCharacters::default(), text),
-        };
-        let segments = segments(body, characters)?;
-        if segments.is_empty() {
-            return Err(ValidationIssue::malformed("no segment"));
-        }
-        let advice = text
-            .strip_suffix(body)
-            .filter(|head| !head.is_empty())
-            .map(str::to_string);
+        let walk = Walk::over(text)?;
+        let advice = walk.advice().map(str::to_string);
+        let characters = walk.characters();
+        let segments = walk
+            .map(|lying| lying.map(|lying| lying.segment()))
+            .collect::<Result<_, _>>()?;
         Ok(Self {
             advice,
             characters,
@@ -231,66 +213,6 @@ impl Interchange {
         }
         issues
     }
-}
-
-fn segments(body: &str, c: ServiceCharacters) -> Result<Vec<Segment>, ValidationIssue> {
-    let mut segments = Vec::new();
-    let mut elements: Vec<Vec<String>> = vec![vec![String::new()]];
-    let mut chars = body.chars().peekable();
-    let mut released = false;
-    while let Some(ch) = chars.next() {
-        if released {
-            push(&mut elements, ch);
-            released = false;
-        } else if ch == c.release {
-            released = true;
-        } else if ch == c.terminator {
-            segments.push(segment(std::mem::take(&mut elements))?);
-            elements = vec![vec![String::new()]];
-            while chars.peek().is_some_and(|n| n.is_whitespace()) {
-                chars.next();
-            }
-        } else if ch == c.data {
-            elements.push(vec![String::new()]);
-        } else if ch == c.component {
-            if let Some(last) = elements.last_mut() {
-                last.push(String::new());
-            }
-        } else {
-            push(&mut elements, ch);
-        }
-    }
-    if released {
-        return Err(ValidationIssue::malformed(
-            "the text ends on a release character",
-        ));
-    }
-    if elements.len() > 1 || !elements[0][0].is_empty() {
-        return Err(ValidationIssue::malformed(
-            "the last segment has no terminator",
-        ));
-    }
-    Ok(segments)
-}
-
-fn push(elements: &mut [Vec<String>], ch: char) {
-    if let Some(component) = elements.last_mut().and_then(|e| e.last_mut()) {
-        component.push(ch);
-    }
-}
-
-fn segment(mut elements: Vec<Vec<String>>) -> Result<Segment, ValidationIssue> {
-    let tag = elements.remove(0).into_iter().next().unwrap_or_default();
-    let sound = tag.len() == 3
-        && tag
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
-    if !sound {
-        return Err(ValidationIssue::malformed(format!(
-            "{tag:?} is not a segment tag"
-        )));
-    }
-    Ok(Segment { tag, elements })
 }
 
 #[cfg(test)]
