@@ -1,6 +1,16 @@
-//! ISO 9735 syntax: an interchange read into segments, written back in its
-//! own service characters, and the soundness checks the service segments
-//! carry. The segments are cut by the one walk, [`Walk`].
+//! ISO 9735 syntax: an interchange walked a segment at a time in its own
+//! service characters, read into segments, written back in them, and the
+//! soundness checks the service segments carry.
+//!
+//! The walk is the Foundation's one segment walk (`message::segment`),
+//! given the service characters the `UNA` advises or the default set: a
+//! segment ends at the first terminator no release stands before, the
+//! whitespace between two segments is skipped, and the interchange opens
+//! with its first segment, as ISO 9735 has it. What reads one segment cuts
+//! only that one and walks the rest uncut ([`Interchange::walk`], its
+//! [`Segments`]), and [`Interchange::parse`] cuts every one into the tree a
+//! write edits: one walk, so a segment is cut, a release honored and a
+//! malformed interchange refused in the same words by both.
 //!
 //! An issue's `code` is `malformed` when the text cannot be read as segments at
 //! all, else `envelope` for a service-segment departure; its `path` is
@@ -8,10 +18,11 @@
 
 use contract::ValidationIssue;
 // The segment is the capability's: EDIFACT and X12 read the same shape
-// (ADR-0044); the walk that cuts it out of an interchange is this crate's.
+// (ADR-0044); the syntax that cuts it out of an interchange is this crate's.
 use contract::segment::Segment;
+use message::segment::Delimiters;
 
-use crate::walk::Walk;
+use crate::segments::Segments;
 
 /// The service characters in force.
 #[derive(Clone, Copy, Debug)]
@@ -19,7 +30,9 @@ pub struct ServiceCharacters {
     pub component: char,
     pub data: char,
     pub decimal: char,
-    pub release: char,
+    /// None where the `UNA` advises a space: ISO 9735 syntax 3, *if not
+    /// used, insert space character*.
+    pub release: Option<char>,
     pub terminator: char,
 }
 
@@ -29,8 +42,35 @@ impl Default for ServiceCharacters {
             component: ':',
             data: '+',
             decimal: '.',
-            release: '?',
+            release: Some('?'),
             terminator: '\'',
+        }
+    }
+}
+
+impl ServiceCharacters {
+    /// What the walk cuts by: the terminator, the data element and
+    /// component separators, and the release character where there is one.
+    ///
+    /// # Errors
+    /// The `malformed` issue a service character outside ASCII is: the walk
+    /// reads bytes.
+    fn delimiters(self) -> Result<Delimiters, ValidationIssue> {
+        let byte = |ch: char| u8::try_from(ch).ok().filter(u8::is_ascii);
+        let release = self.release.map_or(Some(None), |ch| byte(ch).map(Some));
+        match (
+            byte(self.terminator),
+            byte(self.data),
+            byte(self.component),
+            release,
+        ) {
+            (Some(terminator), Some(data), Some(component), Some(release)) => {
+                let delimiters = Delimiters::new(terminator, data, component);
+                Ok(release.map_or(delimiters, |release| delimiters.with_release(release)))
+            }
+            _ => Err(ValidationIssue::malformed(
+                "UNA advises a service character outside ASCII",
+            )),
         }
     }
 }
@@ -44,12 +84,29 @@ pub struct Interchange {
 }
 
 impl Interchange {
+    /// `text`'s segments, one at a time, read with the service characters
+    /// its `UNA` advises, else the default set.
+    ///
+    /// # Errors
+    /// The `malformed` issue a `UNA` shorter than its six service
+    /// characters, or advising one outside ASCII, is.
+    pub fn walk(text: &str) -> Result<Segments<'_>, ValidationIssue> {
+        let (characters, body) = match text.strip_prefix("UNA") {
+            Some(advice) => advised(advice)?,
+            None => (ServiceCharacters::default(), text),
+        };
+        let head = &text[..text.len() - body.len()];
+        let advice = Some(head).filter(|head| !head.is_empty());
+        let delimiters = characters.delimiters()?;
+        Ok(Segments::new(advice, characters, delimiters, body))
+    }
+
     /// Read `text` with its own service characters.
     ///
     /// # Errors
     /// The one `malformed` issue when the text is not segments at all.
     pub fn parse(text: &str) -> Result<Self, ValidationIssue> {
-        let walk = Walk::over(text)?;
+        let walk = Self::walk(text)?;
         let advice = walk.advice().map(str::to_string);
         let characters = walk.characters();
         let segments = walk
@@ -81,11 +138,14 @@ impl Interchange {
 
     /// The interchange written with its own service characters, its `UNA`
     /// as it was, every service character in a value released.
-    #[must_use]
-    pub fn written(&self) -> String {
+    ///
+    /// # Errors
+    /// A value carries a service character where the `UNA` advises no
+    /// release character, so it cannot be written.
+    pub fn written(&self) -> Result<String, String> {
         let c = self.characters;
         let mut text = self.advice.clone().unwrap_or_default();
-        for segment in &self.segments {
+        for (number, segment) in self.segments.iter().enumerate() {
             text.push_str(&segment.tag);
             for element in &segment.elements {
                 text.push(c.data);
@@ -94,8 +154,17 @@ impl Interchange {
                         text.push(c.component);
                     }
                     for ch in component.chars() {
-                        if [c.component, c.data, c.release, c.terminator].contains(&ch) {
-                            text.push(c.release);
+                        let service = [c.component, c.data, c.terminator].contains(&ch);
+                        if service || Some(ch) == c.release {
+                            let Some(release) = c.release else {
+                                return Err(format!(
+                                    "segment {} ({}) holds {component:?}, which carries a \
+                                     service character, and the UNA advises no release character",
+                                    number + 1,
+                                    segment.tag
+                                ));
+                            };
+                            text.push(release);
                         }
                         text.push(ch);
                     }
@@ -103,7 +172,7 @@ impl Interchange {
             }
             text.push(c.terminator);
         }
-        text
+        Ok(text)
     }
 
     /// Every `UNH`, numbered from 1.
@@ -215,6 +284,29 @@ impl Interchange {
     }
 }
 
+/// The service characters a `UNA`'s six advise, and the text after them.
+fn advised(advice: &str) -> Result<(ServiceCharacters, &str), ValidationIssue> {
+    let mut read = advice.chars();
+    let mut next = || {
+        read.next().ok_or_else(|| {
+            ValidationIssue::malformed("UNA is shorter than its six service characters")
+        })
+    };
+    let characters = ServiceCharacters {
+        component: next()?,
+        data: next()?,
+        decimal: next()?,
+        // A space is no release character.
+        release: Some(next()?).filter(|release| *release != ' '),
+        terminator: {
+            // The fifth is reserved.
+            next()?;
+            next()?
+        },
+    };
+    Ok((characters, read.as_str()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,14 +315,14 @@ mod tests {
     fn an_interchange_is_written_back_as_it_was_read() {
         let text = "UNA:+.? 'UNB+UNOC:3+S+R'FTX+AAI+++a?+b?'c'UNZ+0+R'";
         let mut read = Interchange::parse(text).expect("parses");
-        assert_eq!(read.written(), text);
+        assert_eq!(read.written().expect("written"), text);
         read.segments_mut()[1].elements[3][0] = "x:y".to_string();
         assert_eq!(
-            read.written(),
+            read.written().expect("written"),
             "UNA:+.? 'UNB+UNOC:3+S+R'FTX+AAI+++x?:y'UNZ+0+R'"
         );
         let bare = Interchange::parse("UNB+UNOC:3+S+R'UNZ+0+R'").expect("parses");
-        assert_eq!(bare.written(), "UNB+UNOC:3+S+R'UNZ+0+R'");
+        assert_eq!(bare.written().expect("written"), "UNB+UNOC:3+S+R'UNZ+0+R'");
     }
 
     #[test]
@@ -240,6 +332,28 @@ mod tests {
         let read = Interchange::parse(text).expect("parses");
         assert_eq!(read.segments()[1].simple(4), "Price is 5^ per unit");
         assert_eq!(read.segments()[0].element(1), ["UNOC", "3"]);
+    }
+
+    /// A space in UNA4 is no release character (ISO 9735 syntax 3: *if not
+    /// used, insert space character*): `?` is then a character like any.
+    #[test]
+    fn a_space_advised_as_the_release_character_is_none() {
+        let text = "UNA:+.  'UNB+UNOC:3+S+R'FTX+AAI+++Why? Because'UNZ+0+R'";
+        let mut read = Interchange::parse(text).expect("parses");
+        assert_eq!(read.characters().release, None);
+        assert_eq!(read.segments()[1].simple(4), "Why? Because");
+        assert_eq!(read.segments()[1].tag, "FTX");
+        assert_eq!(read.written().expect("written"), text);
+        // A space in a value stays a space; a separator cannot be written.
+        read.segments_mut()[1].elements[3][0] = "a b".to_string();
+        assert!(read.written().expect("written").contains("FTX+AAI+++a b'"));
+        read.segments_mut()[1].elements[3][0] = "a+b".to_string();
+        let refused = read.written().expect_err("no release character");
+        assert!(refused.contains("segment 2 (FTX)"), "{refused}");
+        // With no release character, a `?` before the terminator ends nothing.
+        let ended = Interchange::parse("UNA:+.  'UNB+X?'UNZ+0+R'").expect("parses");
+        assert_eq!(ended.segments()[0].simple(1), "X?");
+        assert_eq!(ended.segments().len(), 2);
     }
 
     #[test]
@@ -270,5 +384,72 @@ mod tests {
         assert!(Interchange::parse("UNB+X").is_err());
         assert!(Interchange::parse("un+X'").is_err());
         assert!(Interchange::parse("UNA:+.?").is_err());
+    }
+
+    #[test]
+    fn a_walk_yields_a_segment_at_a_time_and_cuts_one_only_when_asked() {
+        let text = "UNA:+.? 'UNB+UNOC:3+S+R'\nFTX+AAI+++a?'b??:c?+d'UNZ+0+R'";
+        let mut walk = Interchange::walk(text).expect("advised");
+        assert_eq!(walk.advice(), Some("UNA:+.? '"));
+        assert_eq!(walk.next().expect("one").expect("sound").tag(), "UNB");
+        let ftx = walk.next().expect("two").expect("sound");
+        assert_eq!(ftx.tag(), "FTX");
+        assert_eq!(ftx.segment().element(4), ["a'b?", "c+d"]);
+        assert_eq!(walk.next().expect("three").expect("sound").tag(), "UNZ");
+        assert!(walk.next().is_none());
+        // A released character in a tag is read as a segment is cut.
+        let released = Interchange::walk("U?NB+1'").expect("default").next();
+        assert_eq!(released.expect("one").expect("sound").tag(), "UNB");
+        // The tag's element ends the tag; what else it holds is not read.
+        let composite = Interchange::parse("UNH:1+X'").expect("parses");
+        assert_eq!(composite.segments()[0].tag, "UNH");
+        assert_eq!(composite.segments()[0].element(1), ["X"]);
+    }
+
+    #[test]
+    fn a_walk_refuses_what_it_reaches_and_ends_there() {
+        let refused = |text: &str| {
+            Interchange::walk(text)
+                .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+                .expect_err("malformed")
+                .message
+        };
+        assert_eq!(
+            refused("UNB+1'UNZ+1?"),
+            "the text ends on a release character"
+        );
+        assert_eq!(refused("UNB+1'UNZ+1?'"), "a segment without its terminator");
+        assert_eq!(refused("UNB+1'unz+1'"), "\"unz\" is not a segment tag");
+        assert_eq!(refused("UNB+1''"), "\"\" is not a segment tag");
+        // Nothing stands before an interchange's first segment.
+        assert_eq!(refused(" UNB+1'UNZ+0+1'"), "\" UNB\" is not a segment tag");
+        assert_eq!(
+            refused("UNA:+.? '\r\nUNB+1'"),
+            "\"\\r\\nUNB\" is not a segment tag"
+        );
+        assert_eq!(refused(" \n"), "no segment at all");
+        assert_eq!(refused(""), "no segment at all");
+        assert_eq!(
+            refused("UNA:+.? 'UNB+1?"),
+            "the text ends on a release character"
+        );
+        assert_eq!(
+            refused("UNA:+."),
+            "UNA is shorter than its six service characters"
+        );
+        assert_eq!(
+            refused("UNA:+.? \u{e9}UNB+1\u{e9}"),
+            "UNA advises a service character outside ASCII"
+        );
+        // What lies past the segments taken is not read.
+        let mut walk = Interchange::walk("UNB+1'UNH+1'unz+1").expect("default");
+        assert!(walk.next().expect("one").is_ok());
+        assert!(walk.next().expect("two").is_ok());
+        assert!(walk.next().expect("three").is_err());
+        assert!(walk.next().is_none(), "a walk ends where it refuses");
+        let mut walk = Interchange::walk("UNB+1'unz+1'UNZ+1'").expect("default");
+        assert!(walk.next().expect("one").is_ok());
+        assert!(walk.next().expect("two").is_err());
+        assert!(walk.next().is_none(), "a walk ends where a tag is refused");
     }
 }

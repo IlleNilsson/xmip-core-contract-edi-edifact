@@ -21,6 +21,9 @@ contract = { package = "xmip-core-contract", git = "https://github.com/IlleNilss
 # contract::ContractFactory (ADR-0064, amendment 2026-09-26).
 xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
 stream = { package = "xmip-core-stream", git = "https://github.com/IlleNilsson/xmip-core-stream", branch = "main" }
+# The one segment walk (`message::segment`), which the EDIFACT shape
+# sections by too: the syntax hands it the service characters in force.
+message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main" }
 
 [dev-dependencies]
 # The parent's Stream fixture, for the tests only (ADR-0044).
