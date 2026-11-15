@@ -15,7 +15,13 @@ An interchange is read by the Foundation's one segment walk
 `segment`, which the EDIFACT shape sections by too), a segment at a time in
 the service characters the `UNA` advises or the default set, releases
 honored: `syntax::Interchange::walk` hands it the service characters and
-holds each tag to three capitals or digits. The contract walks the
+holds each tag to three capitals or digits. The `UNA` is read by the EDIFACT
+shape's one reader
+([xmip-core-message-edi-edifact](https://github.com/IlleNilsson/xmip-core-message-edi-edifact)'s
+`advice`), the shape of the same standard and the one technology this
+contract depends on (ADR-0044, amendment 2026-11-15): a space advised as the
+release character is none, as ISO 9735 syntax 3 says, so a value holding a
+service character is refused on write. The contract walks the
 interchange whole into the segments it checks, and the `edi` path technology
 ([xmip-core-path-edi](https://github.com/IlleNilsson/xmip-core-path-edi))
 cuts only the segment it reads and walks the rest uncut, so a malformed

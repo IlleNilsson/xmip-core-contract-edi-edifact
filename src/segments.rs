@@ -14,15 +14,12 @@ use contract::segment::Segment;
 use message::segment::piece::Piece;
 use message::segment::{Delimiters, Walk};
 
-use crate::syntax::ServiceCharacters;
-
 /// An interchange's segments, one at a time, in the order they lie, as
 /// [`Interchange::walk`](crate::syntax::Interchange::walk) begins them.
 /// After a refusal it yields nothing.
 #[derive(Clone, Debug)]
 pub struct Segments<'a> {
     advice: Option<&'a str>,
-    characters: ServiceCharacters,
     delimiters: Delimiters,
     /// The text after the `UNA`, which is walked.
     body: &'a str,
@@ -34,16 +31,14 @@ pub struct Segments<'a> {
 
 impl<'a> Segments<'a> {
     /// `body`, the text after the `UNA` where there is one, walked with
-    /// `delimiters`, the walk's form of `characters`.
+    /// `delimiters`, the service characters in force.
     pub(crate) const fn new(
         advice: Option<&'a str>,
-        characters: ServiceCharacters,
         delimiters: Delimiters,
         body: &'a str,
     ) -> Self {
         Self {
             advice,
-            characters,
             delimiters,
             body,
             walk: Some(delimiters.walk(body.as_bytes())),
@@ -57,10 +52,10 @@ impl<'a> Segments<'a> {
         self.advice
     }
 
-    /// The service characters in force.
+    /// The service characters in force, as the walk cuts by them.
     #[must_use]
-    pub const fn characters(&self) -> ServiceCharacters {
-        self.characters
+    pub const fn delimiters(&self) -> Delimiters {
+        self.delimiters
     }
 }
 
