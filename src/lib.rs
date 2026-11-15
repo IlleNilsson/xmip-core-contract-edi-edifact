@@ -20,8 +20,8 @@
 //! (owner, 2026-09-07); the segment tables that would hold a message to its
 //! directory's structure are the next layer here, not another repository.
 
+pub mod segments;
 pub mod syntax;
-pub mod walk;
 
 use contract::segment::Segment;
 use contract::{

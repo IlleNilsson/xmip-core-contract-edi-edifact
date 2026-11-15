@@ -10,9 +10,13 @@ once the contract is named**: a Receive or Send Location that refers to this
 contract with a message type bound, `ORDERS` or `ORDERS:D:96A`, has every
 message's `UNH` held to it.
 
-An interchange is read by one walk, `walk::Walk`, a segment at a time in its
-own service characters, releases honored: the contract walks it whole into
-the segments it checks, and the `edi` path technology
+An interchange is read by the Foundation's one segment walk
+([xmip-core-message](https://github.com/IlleNilsson/xmip-core-message)'s
+`segment`, which the EDIFACT shape sections by too), a segment at a time in
+the service characters the `UNA` advises or the default set, releases
+honored: `syntax::Interchange::walk` hands it the service characters and
+holds each tag to three capitals or digits. The contract walks the
+interchange whole into the segments it checks, and the `edi` path technology
 ([xmip-core-path-edi](https://github.com/IlleNilsson/xmip-core-path-edi))
 cuts only the segment it reads and walks the rest uncut, so a malformed
 interchange is refused in the same words by both.
