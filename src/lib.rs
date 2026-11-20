@@ -170,11 +170,7 @@ impl Contract for Edifact {
 /// Why a `UNH` is not the bound type, or `None` when it is.
 fn mismatch(wanted: &MessageType, header: &Segment) -> Option<String> {
     let s009 = header.element(2);
-    let actual = |index: usize| {
-        s009.get(index)
-            .map(|c| c.to_ascii_uppercase())
-            .unwrap_or_default()
-    };
+    let actual = |index: usize| s009.get(index).map_or_default(|c| c.to_ascii_uppercase());
     if actual(0) != wanted.name {
         return Some(format!("is {}, the contract is {}", actual(0), wanted.name));
     }
