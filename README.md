@@ -27,7 +27,7 @@ interchange whole into the segments it checks, and the `edi` path technology
 cuts only the segment it reads and walks the rest uncut, so a malformed
 interchange is refused in the same words by both.
 
-The claims are this crate's when it is called, and the Essentials calls it.
+The claims are this crate's when it is called, and the System Tests call it.
 A node holding a Location's Streams to it is
 [decided, not built](../../../../../doc/architecture/estate-map.md#arrival-validation): a node refuses to start a
 Location that names a contract until it does.
