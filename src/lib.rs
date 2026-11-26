@@ -19,20 +19,37 @@
 //! directory is a version of this one technology and lives in this repository
 //! (owner, 2026-09-07); the segment tables that would hold a message to its
 //! directory's structure are the next layer here, not another repository.
+//!
+//! **Built with its `declaration` feature alone** the crate is
+//! [`declaration`], what a Location naming it is configured with and the
+//! name a Validate step names it by, and none of the code above, which is
+//! behind the default feature: what the surfaces' library carries (ADR-0064,
+//! amendment 2026-11-26).
 
+#[cfg(feature = "declaration")]
+pub mod declaration;
+
+#[cfg(feature = "default")]
 pub mod segments;
+#[cfg(feature = "default")]
 pub mod syntax;
 
+#[cfg(feature = "default")]
 use contract::segment::Segment;
+#[cfg(feature = "default")]
 use contract::{
     Contract, ContractDescriptor, ContractError, ContractFactory, ContractId, ValidationIssue,
     ValidationResult,
 };
+#[cfg(feature = "default")]
 use stream::Stream;
+#[cfg(feature = "default")]
 use syntax::Interchange;
-use xcore::settings::{Applies, Kind, Presence, Setting, Settings};
+#[cfg(feature = "default")]
+use xcore::settings::Settings;
 
 /// The bound message type: type, and optionally version and release.
+#[cfg(feature = "default")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MessageType {
     pub name: String,
@@ -40,6 +57,7 @@ pub struct MessageType {
     pub release: Option<String>,
 }
 
+#[cfg(feature = "default")]
 impl MessageType {
     /// `ORDERS`, `ORDERS:D:96A`, `INVOIC:D:01B`.
     ///
@@ -73,11 +91,13 @@ impl MessageType {
 }
 
 /// The EDIFACT contract, bare or bound to a message type.
+#[cfg(feature = "default")]
 pub struct Edifact {
     descriptor: ContractDescriptor,
     message_type: Option<MessageType>,
 }
 
+#[cfg(feature = "default")]
 impl Edifact {
     /// A sound interchange, of any message types.
     #[must_use]
@@ -104,12 +124,14 @@ impl Edifact {
     }
 }
 
+#[cfg(feature = "default")]
 impl Default for Edifact {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "default")]
 fn descriptor(id: &str) -> ContractDescriptor {
     ContractDescriptor {
         id: ContractId(id.to_string()),
@@ -118,6 +140,7 @@ fn descriptor(id: &str) -> ContractDescriptor {
     }
 }
 
+#[cfg(feature = "default")]
 impl Contract for Edifact {
     fn descriptor(&self) -> &ContractDescriptor {
         &self.descriptor
@@ -168,6 +191,7 @@ impl Contract for Edifact {
 }
 
 /// Why a `UNH` is not the bound type, or `None` when it is.
+#[cfg(feature = "default")]
 fn mismatch(wanted: &MessageType, header: &Segment) -> Option<String> {
     let s009 = header.element(2);
     let actual = |index: usize| s009.get(index).map_or_default(|c| c.to_ascii_uppercase());
@@ -190,15 +214,17 @@ fn mismatch(wanted: &MessageType, header: &Segment) -> Option<String> {
 
 /// Loads the contract a Location names: an empty reference is the bare
 /// contract, anything else is a message type, `ORDERS` or `ORDERS:D:96A`.
+#[cfg(feature = "default")]
 pub struct EdifactFactory;
 
+#[cfg(feature = "default")]
 impl ContractFactory for EdifactFactory {
     fn technology(&self) -> &'static str {
-        "edi-edifact"
+        declaration::NAME
     }
 
     fn settings(&self) -> &'static Settings {
-        SETTINGS
+        declaration::SETTINGS
     }
 
     fn load(&self, reference: &str) -> Result<Box<dyn Contract>, ContractError> {
@@ -208,18 +234,6 @@ impl ContractFactory for EdifactFactory {
         Ok(Box::new(Edifact::of(MessageType::parse(reference)?)))
     }
 }
-
-/// What a Location gives this contract (ADR-0064, amendment 2026-09-26).
-const SETTINGS: &Settings = &Settings {
-    technology: env!("CARGO_PKG_NAME"),
-    settings: &[Setting {
-        name: "reference",
-        kind: Kind::Text,
-        presence: Presence::Optional,
-        meaning: "The message type, ORDERS or ORDERS:D:96A; left out, any interchange holds.",
-        applies: Applies::Both,
-    }],
-};
 
 #[cfg(test)]
 mod tests {
@@ -297,6 +311,8 @@ LIN+1++X001:SA'QTY+21:2'UNS+S'CNT+2:1'UNT+9+1'UNZ+1+REF001'";
 
     #[test]
     fn edi_edifact_declares_its_settings_and_reads_through_them() {
+        use declaration::SETTINGS;
+        use xcore::settings::Applies;
         assert!(SETTINGS.problems().is_empty(), "{:?}", SETTINGS.problems());
         let given = |name: &str, value: &str| {
             (
