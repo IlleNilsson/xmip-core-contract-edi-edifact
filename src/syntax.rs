@@ -4,7 +4,7 @@
 //!
 //! The walk is the Foundation's one segment walk (`message::segment`),
 //! given the service characters the `UNA` advises or the default set, as
-//! the EDIFACT shape's one reader of the `UNA` reads them (`shape::advice`):
+//! the EDIFACT shape's one reader of the `UNA` reads them (`edifact_shape::advice`):
 //! a segment ends at the first terminator no release stands before, the
 //! whitespace between two segments is skipped, and the interchange opens
 //! with its first segment, as ISO 9735 has it. What reads one segment cuts
@@ -42,7 +42,7 @@ impl Interchange {
     /// read: shorter than its nine characters, or with a service character
     /// outside ASCII.
     pub fn walk(text: &str) -> Result<Segments<'_>, ValidationIssue> {
-        let advice = shape::advice(text.as_bytes())
+        let advice = edifact_shape::advice(text.as_bytes())
             .map_err(|refused| ValidationIssue::malformed(refused.reason))?;
         // The UNA is ASCII, as the shape holds it, so the body starts on a
         // character of the text.
@@ -272,7 +272,7 @@ mod tests {
         let mut read = Interchange::parse(text).expect("parses");
         assert_eq!(read.delimiters().release, None);
         // One reader of the UNA: the shape's, whatever reads the interchange.
-        let advised = shape::advice(text.as_bytes()).expect("advised");
+        let advised = edifact_shape::advice(text.as_bytes()).expect("advised");
         assert_eq!(read.delimiters(), advised.delimiters);
         assert_eq!(read.segments()[1].simple(4), "Why? Because");
         assert_eq!(read.segments()[1].tag, "FTX");
